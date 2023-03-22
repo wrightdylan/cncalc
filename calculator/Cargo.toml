@@ -1,0 +1,34 @@
+[package]
+name = "cncalc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Calculate distances between all combinations of stars in a cluster."
+rust-version.workspace = true
+
+[registeries.crates-io]
+protocol.workspace = true
+
+[dev-dependencies]
+assert_float_eq = "1.1.3"
+
+[dependencies]
+clap.workspace = true
+csv.workspace = true
+indicatif.workspace = true
+ndarray.workspace = true
+polars.workspace = true
+polars-core.workspace = true
+
+[profile.dev]
+opt-level = 1
+
+[profile.test]
+opt-level = 1
+
+[profile.release]
+strip = true      # Automagically strip symbols from the library
+opt-level = "z"   # Highest optimisation
+lto = true        # Enable link time optimisation
+codegen-units = 1 # Maximise size reduction optimisation
+panic = 'abort'   # Aborts on panic
