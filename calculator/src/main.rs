@@ -15,6 +15,7 @@ fn main() {
         "ra".to_string(),
         "dec".to_string(),
         "parallax".to_string(),
+        "g_abs".to_string()
     ];
 
     let mut df1 = load_data(&args.filename, load_cols).unwrap();
@@ -32,7 +33,7 @@ fn main() {
     let source = restructure_data(&df1);
 
     // Generate a new dataframe containing all distances
-    let mut df2 = calc_distances(df1, source);
+    let mut df2 = calc_distances(&df1, &source);
 
     let lap_time2 = SystemTime::now();
     let time_end = lap_time2.duration_since(lap_time1).unwrap();
@@ -46,4 +47,8 @@ fn main() {
     println!("Radial distances completed in {:?}", time_elapsed);
     println!("Distances calculated in {:?}", time_end);
     println!("Operation completed in {:?}", time_total);
+
+    // Calculate the Gini coefficient of the star cluster
+    let gini = gini_coefficient(&source);
+    println!("Gini coefficient of the star cluster is: {}", gini);
 }

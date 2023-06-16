@@ -2,7 +2,7 @@
 members = ["calculator", "minmax"]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 authors = ["Dylan Wright"]
 rust-version = "1.68.0"
@@ -13,10 +13,10 @@ protocol = "sparse"
 [workspace.dependencies]
 clap = { version = "4.1.4", features = ["derive"] }
 csv = "1.1.6"
+decorum = "0.3.1"
 indicatif = "0.17.3"
 ndarray = "0.15.6"
-polars = { version = "0.27.2", features = ["lazy", "csv-file", "parquet"] }
-polars-core = "0.27.2"
+polars = { version = "0.30.0", features = ["lazy", "parquet"] }
 
 [build]
 target = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]

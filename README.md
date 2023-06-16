@@ -6,6 +6,8 @@ The second version of this project allows me to get accustomed to using workspac
 
 Since I'm on Linux, I thought I would also give cross compiling a go.
 
+There was an attempt at parallelisation, but it turns out to run slower compared to a single thread. Maybe it would work better for globular clusters.
+
 ## Installation
 
 Build all binaries with the command:
@@ -36,6 +38,11 @@ minmax <FILENAME>
 ```
 
 This will generate a CSV file with all minimums and maximums, and a text summary.
+
+## Features
+- Calculates all distances between each and every star within a cluster.
+- Summarises distances.
+- Calculates Gini coefficient of the star cluster.
 
 ## Changelog
 

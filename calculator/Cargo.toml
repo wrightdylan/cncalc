@@ -15,10 +15,10 @@ assert_float_eq = "1.1.3"
 [dependencies]
 clap.workspace = true
 csv.workspace = true
+decorum.workspace = true
 indicatif.workspace = true
 ndarray.workspace = true
 polars.workspace = true
-polars-core.workspace = true
 
 [profile.dev]
 opt-level = 1
