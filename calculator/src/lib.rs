@@ -236,10 +236,11 @@ fn lorenz_curve(data: Vec<f64>) -> Vec<f64> {
 pub fn gini_coefficient(source: &Source) -> f64 {
     let data = normalise_lums(source);
     let curve = lorenz_curve(data);
+    let dx = 1.0 / (source.id.len() - 1) as f64;
 
     let auc = curve
         .windows(2)
-        .map(|x| (x[0] + x[1]) / 2.0)
+        .map(|x| ((x[0] + x[1]) / 2.0) * dx)
         .sum::<f64>();
 
     1.0 - 2.0 * auc

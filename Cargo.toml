@@ -5,7 +5,7 @@ members = ["calculator", "minmax"]
 version = "0.0.2"
 edition = "2021"
 authors = ["Dylan Wright"]
-rust-version = "1.68.0"
+rust-version = "1.70.0"
 
 [workspace.registeries.crates-io]
 protocol = "sparse"
