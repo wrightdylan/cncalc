@@ -6,24 +6,9 @@ authors.workspace = true
 description = "Find minimum and maximum distances for each star in the cluster."
 rust-version.workspace = true
 
-[registeries.crates-io]
-protocol.workspace = true
-
 [dependencies]
 clap.workspace = true
 indicatif.workspace = true
 ndarray.workspace = true
+num-traits.workspace = true
 polars.workspace = true
-
-[profile.dev]
-opt-level = 1
-
-[profile.test]
-opt-level = 1
-
-[profile.release]
-strip = true      # Automagically strip symbols from the library
-opt-level = "z"   # Highest optimisation
-lto = true        # Enable link time optimisation
-codegen-units = 1 # Maximise size reduction optimisation
-panic = 'abort'   # Aborts on panic

@@ -1,7 +1,7 @@
-use decorum::R64;
 use indicatif::ProgressBar;
 use ndarray::Array2;
 use polars::prelude::*;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Source {
@@ -26,83 +26,66 @@ impl Source {
 // Create dataframe from CSV file
 // I did not see a way to filter columns when reading with LazyFrames
 pub fn load_data(path: &str, load_cols: Vec<String>) -> PolarsResult<DataFrame> {
-    CsvReader::from_path(path)?
-        .infer_schema(None)
-        .has_header(true)
-        .with_delimiter(b',')
-        .with_columns(Some(load_cols))
+    CsvReadOptions::default()
+        .with_infer_schema_length(None)
+        .with_has_header(true)
+        .with_columns(Some(load_cols.into_iter().map(PlSmallStr::from).collect()))
+        .with_parse_options(
+            CsvParseOptions::default()
+                .with_separator(b',')
+        )
+        .try_into_reader_with_file_path(Some(PathBuf::from(path)))?
         .finish()
 }
 
 pub fn lazy_load(path: &str) -> PolarsResult<LazyFrame> {
-    LazyCsvReader::new(path)
-        .has_header(true)
-        .with_delimiter(b',')
+    LazyCsvReader::new(PlRefPath::new(path))
+        .with_has_header(true)
+        .map_parse_options(|parse_options| {
+            parse_options.with_separator(b',')
+        })
         .finish()
 }
 
-pub fn restructure_data(df: &DataFrame) -> Source {
-    let messy_desc = df.column("designation").unwrap()
-        .iter().map(|s| s.to_string()).collect::<Vec<_>>();
+pub fn restructure_data(df: &DataFrame) -> PolarsResult<Source> {
+    let designation_col = df.column("designation")?;
+    let designation_series = designation_col.as_materialized_series();
+    let str_chunked = designation_series.str()?;
 
-    let mut des_vec: Vec<String> = Vec::new();
-    for line in messy_desc {
-        let newline = line.split('"').collect::<Vec<_>>();
-        des_vec.push(newline[1].to_string());
-    }
-
-    let ra_vec: Vec<f64> = df.column("ra")
-        .unwrap()
-        .f64()
-        .unwrap()
-        .into_iter()
-        .map(|r| match r {
-            Some(r) => r,
-            _ => panic!("Not a number")
+    let des_vec: Vec<String> = str_chunked
+        .iter()
+        .map(|opt_s| {
+            let s = opt_s.unwrap_or("");
+            let newline: Vec<&str> = s.split('"').collect();
+            newline.get(1).unwrap_or(&"").to_string()
         })
         .collect();
 
-    let dec_vec: Vec<f64> = df.column("dec")
-        .unwrap()
-        .f64()
-        .unwrap()
-        .into_iter()
-        .map(|d| match d {
-            Some(d) => d,
-            _ => panic!("Not a number")
-        })
-        .collect();
+    let extract_f64_vec = |col_name: &str| -> PolarsResult<Vec<f64>> {
+        let col = df.column(col_name)?;
+        let series = col.as_materialized_series();
+        let f64_chunked = series.f64()?;
+        
+        Ok(f64_chunked
+            .iter()
+            .map(|opt_val| opt_val.unwrap_or(0.0))
+            .collect())
+    };
 
-    let rho_vec: Vec<f64> = df.column("distance")
-        .unwrap()
-        .f64()
-        .unwrap()
-        .into_iter()
-        .map(|rho| match rho {
-            Some(rho) => rho,
-            _ => panic!("Not a number")
-        })
-        .collect();
+    let ra_vec = extract_f64_vec("ra")?;
+    let dec_vec = extract_f64_vec("dec")?;
+    let rho_vec = extract_f64_vec("distance")?;
+    let g_abs_vec = extract_f64_vec("g_abs")?;
 
-    let g_abs_vec: Vec<f64> = df.column("g_abs")
-        .unwrap()
-        .f64()
-        .unwrap()
-        .into_iter()
-        .map(|g| match g {
-            Some(g) => g,
-            _ => panic!("Not a number")
-        })
-        .collect();
-    
-    Source {
+    Ok(Source {
         id: des_vec,
         ra: ra_vec,
         dec: dec_vec,
         rho: rho_vec,
-        g_abs: g_abs_vec
-    }
+        g_abs: g_abs_vec,
+    })
 }
+
 
 // Calculate distance(pc) from parallax(mas)
 fn distance(parallax: f64) -> f64 {
@@ -112,23 +95,28 @@ fn distance(parallax: f64) -> f64 {
 }
 
 // Add distance(pc) column
-pub fn calc_rho(df: &mut DataFrame) -> DataFrame {
-    let dist = Series::new(
-        "distance",
-        df.column("parallax")
-            .unwrap()
-            .f64()
-            .unwrap()
-            .into_iter()
-            .map(|s| match s {
-                Some(s) => distance(s),
-                _ => panic!("Empty cell"),
-            })
-            .collect::<Vec<f64>>(),
-    );
+pub fn calc_rho(df: &mut DataFrame) -> PolarsResult<()> {
+    let parallax_col = df.column("parallax")?;
+    let parallax_series = parallax_col.as_materialized_series();
+    let parallax_chunked = parallax_series.f64()?;
 
-    df.with_column(dist).unwrap().clone()
+    let distance_vec: Vec<f64> = parallax_chunked
+        .iter()
+        .map(|opt_p| match opt_p {
+            Some(p) if p > 0.0 => distance(p), 
+            _ => f64::NAN,                     
+        })
+        .collect();
+
+    let dist_series = Series::new(PlSmallStr::from("distance"), distance_vec);
+    let dist_column = Column::from(dist_series);
+
+    df.with_column(dist_column)?;
+
+    Ok(())
 }
+
+
 
 // Calculate angular distance between two points (need to convert to radians)
 fn calc_ang_dist(ra1: f64, ra2: f64, dec1: f64, dec2: f64) -> f64 {
@@ -145,16 +133,17 @@ fn calc_lin_dist(gamma: f64, rho1: f64, rho2: f64) -> f64 {
 }
 
 // Calculate distances between spherical coordinates
-pub fn calc_distances(df1: &DataFrame, source: &Source) -> DataFrame {
+pub fn calc_distances(df1: &DataFrame, source: &Source) -> PolarsResult<DataFrame> {
     let mut df2 = df1
         .clone()
         .lazy()
-        .select([cols(["designation"])])
-        .collect()
-        .unwrap();
+        .select([col(PlSmallStr::from("designation"))])
+        .collect()?;
 
     let size = df1.height();
-    let calculations = ((size * (size - 1)) / 2).try_into().unwrap();
+    let calculations: u64 = ((size * (size - 1)) / 2)
+        .try_into()
+        .map_err(|e| PolarsError::ComputeError(format!("Calculation bounds overflowed: {e}").into()))?;
 
     let mut table = Array2::<f64>::zeros((size, size));
 
@@ -166,7 +155,9 @@ pub fn calc_distances(df1: &DataFrame, source: &Source) -> DataFrame {
             } else {
                 let gamma = calc_ang_dist(source.ra[col], source.ra[row], source.dec[col], source.dec[row]);
                 let lin_dist = calc_lin_dist(gamma, source.rho[col], source.rho[row]);
-                [table[[row, col]], table[[col, row]]] = [lin_dist; 2];
+                
+                table[[row, col]] = lin_dist;
+                table[[col, row]] = lin_dist;
 
                 bar.inc(1);
             }
@@ -174,15 +165,61 @@ pub fn calc_distances(df1: &DataFrame, source: &Source) -> DataFrame {
     }
     bar.finish();
 
-    // Translate data from ndarray to Polars dataframe
     for idx in 0..size {
         let designation = &source.id[idx];
         let col_data = table.column(idx).to_vec();
-        let series_data = Series::new(designation, col_data);
-        df2.with_column(series_data).unwrap();
+        
+        let series_data = Series::new(PlSmallStr::from(designation), col_data);
+        
+        df2.with_column(Column::from(series_data))?;
     }
 
-    df2
+    Ok(df2)
+}
+
+pub fn calc_distances_lazy(df: DataFrame) -> PolarsResult<DataFrame> {
+    let designation_col = PlSmallStr::from("designation");
+    let names_series = df.column(&designation_col)?.as_materialized_series().clone();
+    let names_chunked = names_series.str()?;
+    
+    let ra_vec = df.column("ra")?.as_materialized_series().f64()?.to_vec();
+    let dec_vec = df.column("dec")?.as_materialized_series().f64()?.to_vec();
+    let rho_vec = df.column("distance")?.as_materialized_series().f64()?.to_vec();
+
+    let mut lf = df.lazy();
+
+    let mut output_column_exprs = vec![col(designation_col.clone())];
+
+    for (idx, opt_name) in names_chunked.iter().enumerate() {
+        let star_name = opt_name.unwrap_or("unknown");
+        let target_ra = ra_vec[idx].unwrap_or(0.0);
+        let target_dec = dec_vec[idx].unwrap_or(0.0);
+        let target_rho = rho_vec[idx].unwrap_or(0.0);
+        
+        let star_col_name = PlSmallStr::from(star_name);
+        
+        output_column_exprs.push(col(star_col_name.clone()));
+
+        let distance_expr = col("dec")
+            .map(move |dec_series_col| {
+                let dec_series = dec_series_col.as_materialized_series();
+                let dec_chunked = dec_series.f64()?;
+                
+                let out: Float64Chunked = dec_chunked.apply_values(|dec_val| {
+                    let gamma = calc_ang_dist(target_ra, target_ra, target_dec, dec_val);
+                    calc_lin_dist(gamma, target_rho, target_rho)
+                });
+                
+                Ok(Column::from(out.into_series()))
+            }, |_schema, field| {
+                Ok(Field::new(field.name().clone(), DataType::Float64))
+            })
+            .alias(star_col_name);
+
+        lf = lf.with_column(distance_expr);
+    }
+
+    lf.select(output_column_exprs).collect()
 }
 
 pub fn write_df(df: &mut DataFrame) {
@@ -192,10 +229,9 @@ pub fn write_df(df: &mut DataFrame) {
 
 //----Calculate Gini Coefficient---------------------------------------------->
 
-fn sort_ascending(data: Vec<f64>) -> Vec<f64> {
-    let mut ordered: Vec<R64> = data.into_iter().map(R64::from).collect();
-    ordered.sort();
-    ordered.into_iter().map(R64::into_inner).collect()
+fn sort_ascending(mut data: Vec<f64>) -> Vec<f64> {
+    data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    data
 }
 
 // Wow, sorting and dividing a vector of floats is SO messy
@@ -204,6 +240,29 @@ fn normalise_lums(source: &Source) -> Vec<f64> {
 
     let total: f64 = sorted.iter().sum();
     sorted.iter().map(|lum| lum / total).collect::<Vec<f64>>()
+}
+
+fn normalise_lums_lf(df: &DataFrame) -> PolarsResult<Vec<f64>> {
+    let g_abs_col = df.column("g_abs")?;
+    let g_abs_series = g_abs_col.as_materialized_series();
+    let g_abs_chunked = g_abs_series.f64()?;
+
+    let lums: Vec<f64> = g_abs_chunked
+        .iter()
+        .flatten()
+        .map(|m| {
+            10.0f64.powf(-0.4 * m)
+        })
+        .collect();
+
+    let sorted = sort_ascending(lums);
+    let total: f64 = sorted.iter().sum();
+    
+    if total == 0.0 {
+        return Ok(sorted);
+    }
+
+    Ok(sorted.iter().map(|lum| lum / total).collect())
 }
 
 fn lorenz_curve(data: Vec<f64>) -> Vec<f64> {
@@ -244,6 +303,25 @@ pub fn gini_coefficient(source: &Source) -> f64 {
         .sum::<f64>();
 
     1.0 - 2.0 * auc
+}
+
+pub fn gini_coefficient_lf(df: &DataFrame) -> PolarsResult<f64> {
+    let data = normalise_lums_lf(df)?;
+    let num_stars = data.len();
+    
+    if num_stars <= 1 {
+        return Ok(0.0);
+    }
+
+    let curve = lorenz_curve(data);
+    let dx = 1.0 / (num_stars - 1) as f64;
+
+    let auc = curve
+        .windows(2)
+        .map(|x| ((x[0] + x[1]) / 2.0) * dx)
+        .sum::<f64>();
+
+    Ok(1.0 - 2.0 * auc)
 }
 
 #[cfg(test)]

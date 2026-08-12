@@ -1,0 +1,8 @@
+[alias]
+# Creates a custom command: 'cargo release-all'
+release-all = [
+    "build", 
+    "--release", 
+    "--target", "x86_64-unknown-linux-gnu", 
+    "--target", "x86_64-pc-windows-gnu"
+]
