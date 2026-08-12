@@ -5,7 +5,7 @@ use std::time::SystemTime;
 mod args;
 use crate::args::CalcArgs;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = CalcArgs::parse();
     let time_start = SystemTime::now();
 
@@ -18,22 +18,19 @@ fn main() {
         "g_abs".to_string()
     ];
 
-    let mut df1 = load_data(&args.filename, load_cols).unwrap();
-    // let mut lf1 = lazy_load(&args.filename).unwrap();
-
-    df1 = calc_rho(&mut df1);
+    let mut df1 = load_data(&args.filename, load_cols)?;
+    calc_rho(&mut df1)?;
 
     let lap_time1 = SystemTime::now();
     let time_elapsed = lap_time1.duration_since(time_start).unwrap();
 
-    // Using Polars has proven to be an such an extreme pain in the arse.
-    // It's imperative to use indexing, which Polars seems unable to do even though docs say you can.
-    // Examples in blogs and official docs do not work, and some functions listed don't work either.
-    // Best to just restructure.
-    let source = restructure_data(&df1);
+    // Calculate the Gini coefficient of the star cluster
+    // let gini = gini_coefficient_lf(&df1)?;
+    // println!("Gini coefficient of the star cluster is: {}", gini);
 
-    // Generate a new dataframe containing all distances
-    let mut df2 = calc_distances(&df1, &source);
+    let source = restructure_data(&df1)?;
+    let mut df2 = calc_distances(&df1, &source)?;
+    // let mut df2 = calc_distances_lazy(df1)?;
 
     let lap_time2 = SystemTime::now();
     let time_end = lap_time2.duration_since(lap_time1).unwrap();
@@ -51,4 +48,6 @@ fn main() {
     // Calculate the Gini coefficient of the star cluster
     let gini = gini_coefficient(&source);
     println!("Gini coefficient of the star cluster is: {}", gini);
+
+    Ok(())
 }

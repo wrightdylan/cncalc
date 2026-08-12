@@ -5,16 +5,14 @@ use std::time::SystemTime;
 mod args;
 use crate::args::CalcArgs;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = CalcArgs::parse();
     let time_start = SystemTime::now();
 
-    let df = read_parquet(&args.filename).unwrap();
-    // let lf = scan_parq(path).unwrap();
-
+    let df = read_parquet(&args.filename).unwrap(); 
 
     // Generate a new dataframe containing all mins and maxes
-    let mut df2 = sort_dist(df);
+    let mut df2 = sort_dist(df)?;
 
     // Save the DataFrame to CSV
     write_df(&mut df2);
@@ -23,4 +21,6 @@ fn main() {
     let time_elapsed = lap_time1.duration_since(time_start).unwrap();
 
     println!("Task completed in {:?}", time_elapsed);
+
+    Ok(())
 }
